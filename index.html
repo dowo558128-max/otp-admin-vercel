@@ -403,13 +403,21 @@ async function refreshStatus() {
   }
 
   const hRes = healthSettled.status === 'fulfilled' ? healthSettled.value : null;
-  const ok = hRes && hRes.ok && h && h.status === 'ok';
+  // اعتبار السيرفر "يعمل" إذا ورد body صالح فيه status: 'ok' (حتى مع 2xx أو بعض الوكالات)
+  const ok = h && (h.status === 'ok' || h.status === 'OK');
   if (ok) {
     document.getElementById('srvStatus').textContent = '🟢 يعمل';
     document.getElementById('dbStatus').textContent = (h.dbConnected === true) ? '🟢 متصل' : ('🔴 ' + (h.database || ''));
     document.getElementById('envValue').textContent = h.environment || h.service || '—';
   } else {
-    document.getElementById('srvStatus').textContent = (healthSettled.status === 'rejected' || !hRes) ? '🔴 خطأ اتصال' : '🔴 متوقف';
+    if (healthSettled.status === 'rejected' || !hRes)
+      document.getElementById('srvStatus').textContent = '🔴 خطأ اتصال';
+    else if (hRes && !hRes.ok)
+      document.getElementById('srvStatus').textContent = '🔴 خطأ ' + (hRes.status || '');
+    else if (hRes && hRes.ok && !h)
+      document.getElementById('srvStatus').textContent = '🔴 رد غير صالح';
+    else
+      document.getElementById('srvStatus').textContent = '🔴 متوقف';
     document.getElementById('dbStatus').textContent = '—';
     document.getElementById('envValue').textContent = '—';
     if (h && (h.message || h.error)) addLog('warn', 'السيرفر: ' + (h.message || h.error));
