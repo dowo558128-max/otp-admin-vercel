@@ -288,6 +288,8 @@ const BASE_URL = (() => {
   const path = window.location.pathname;
   const idx = path.indexOf('/admin');
   if (idx > 0) return path.substring(0, idx);
+  // عند فتح اللوحة من Vercel أو مكان آخر بدون config: استخدم السيرفر المعروف
+  if (window.location.hostname !== '76.13.58.90') return 'https://76.13.58.90/otp';
   return '';
 })();
 
@@ -295,89 +297,127 @@ const ADMIN_KEY_INPUT = document.getElementById('adminKey');
 let pollInterval = null;
 
 async function refreshStatus() {
-  try {
-    const waRes = await fetch(BASE_URL + '/api/whatsapp/status');
-    const waJson = await waRes.json();
-    const wa = waJson.data || waJson;
+  if (!BASE_URL) {
+    document.getElementById('srvStatus').textContent = '🔴 غير مضبوط';
+    document.getElementById('statusBadge').textContent = '🔴 تحقق من config.js';
+    addLog('error', 'عنوان API غير معرّف. تحقق من تحميل config.js وتعيين OTP_API_BASE.');
+    return;
+  }
 
-    const badge = document.getElementById('statusBadge');
-    const statusMap = {
-      ready: { text: '🟢 متصل', cls: 'ready' },
-      qr_pending: { text: '🟡 بانتظار المسح', cls: 'pending' },
-      connecting: { text: '🔵 جاري الاتصال', cls: 'connecting' },
-      disconnected: { text: '🔴 غير متصل', cls: 'disconnected' },
-      failed: { text: '❌ فشل', cls: 'disconnected' }
-    };
+  const base = BASE_URL;
+
+  // جلب الحالتين معاً؛ إذا فشل أحدهما نحدّث ما توفّر
+  const [waSettled, healthSettled] = await Promise.allSettled([
+    fetch(base + '/api/whatsapp/status'),
+    fetch(base + '/api/health')
+  ]);
+
+  // ─── معالجة حالة واتساب ─────────────────────────────
+  let wa = null;
+  if (waSettled.status === 'fulfilled' && waSettled.value && waSettled.value.ok) {
+    try {
+      const waJson = await waSettled.value.json();
+      wa = (waJson && (waJson.data != null ? waJson.data : waJson)) || {};
+    } catch (e) {
+      addLog('warn', 'تعذر قراءة رد واتساب: ' + (e.message || ''));
+    }
+  } else if (waSettled.status === 'rejected') {
+    addLog('error', 'واتساب: ' + (waSettled.reason && waSettled.reason.message || 'خطأ اتصال'));
+  }
+
+  const badge = document.getElementById('statusBadge');
+  const statusMap = {
+    ready: { text: '🟢 متصل', cls: 'ready' },
+    qr_pending: { text: '🟡 بانتظار المسح', cls: 'pending' },
+    connecting: { text: '🔵 جاري الاتصال', cls: 'connecting' },
+    disconnected: { text: '🔴 غير متصل', cls: 'disconnected' },
+    failed: { text: '❌ فشل', cls: 'disconnected' }
+  };
+  if (wa && (wa.status != null)) {
     const s = statusMap[wa.status] || statusMap.disconnected;
     badge.textContent = s.text;
     badge.className = 'status-badge ' + s.cls;
-
-    document.getElementById('waStatus').textContent = wa.status || '—';
+    document.getElementById('waStatus').textContent = wa.status;
     document.getElementById('waPhone').textContent = wa.connectedPhone || '—';
-    document.getElementById('waMsgCount').textContent = wa.messagesSent || 0;
+    document.getElementById('waMsgCount').textContent = (wa.messagesSent != null) ? wa.messagesSent : '0';
+  } else {
+    badge.textContent = '🔴 خطأ اتصال';
+    badge.className = 'status-badge disconnected';
+    document.getElementById('waStatus').textContent = '—';
+    document.getElementById('waPhone').textContent = '—';
+    document.getElementById('waMsgCount').textContent = '0';
+  }
 
-    const qrImg = document.getElementById('qrImage');
-    const qrPlaceholder = document.getElementById('qrPlaceholder');
-    const connectedInfo = document.getElementById('connectedInfo');
+  const qrImg = document.getElementById('qrImage');
+  const qrPlaceholder = document.getElementById('qrPlaceholder');
+  const connectedInfo = document.getElementById('connectedInfo');
 
-    if (wa.status === 'ready') {
-      qrImg.style.display = 'none';
-      qrPlaceholder.style.display = 'none';
-      connectedInfo.style.display = 'block';
-      document.getElementById('connectedPhone').textContent = '+' + (wa.connectedPhone || '');
-    } else if (wa.status === 'qr_pending') {
-      let qrUrl = wa.qrDataUrl || null;
-      if (!qrUrl) {
-        try {
-          const qrRes = await fetch(BASE_URL + '/api/whatsapp/qr');
+  if (wa && wa.status === 'ready') {
+    qrImg.style.display = 'none';
+    qrPlaceholder.style.display = 'none';
+    connectedInfo.style.display = 'block';
+    document.getElementById('connectedPhone').textContent = '+' + (wa.connectedPhone || '');
+  } else if (wa && wa.status === 'qr_pending') {
+    let qrUrl = (wa && wa.qrDataUrl) || null;
+    if (!qrUrl) {
+      try {
+        const qrRes = await fetch(base + '/api/whatsapp/qr');
+        if (qrRes.ok) {
           const qrData = await qrRes.json();
-          if (qrData.success && qrData.qr) qrUrl = qrData.qr;
-        } catch (e) {}
-      }
-      if (qrUrl) {
-        qrImg.src = qrUrl;
-        qrImg.style.display = 'block';
-        qrPlaceholder.style.display = 'none';
-        connectedInfo.style.display = 'none';
-      } else {
-        qrImg.style.display = 'none';
-        connectedInfo.style.display = 'none';
-        qrPlaceholder.style.display = 'flex';
-        qrPlaceholder.innerHTML = '<span style="font-size:40px">📱</span><span>بانتظار رمز QR...</span>';
-      }
+          if (qrData && qrData.success && qrData.qr) qrUrl = qrData.qr;
+        }
+      } catch (e) {}
+    }
+    if (qrUrl) {
+      qrImg.src = qrUrl;
+      qrImg.style.display = 'block';
+      qrPlaceholder.style.display = 'none';
+      connectedInfo.style.display = 'none';
     } else {
       qrImg.style.display = 'none';
       connectedInfo.style.display = 'none';
       qrPlaceholder.style.display = 'flex';
-      if (wa.status === 'connecting') {
-        qrPlaceholder.innerHTML = '<span class="spinner-small"></span><span>جاري الاتصال بواتساب...</span>';
-      } else {
-        qrPlaceholder.innerHTML = '<span style="font-size:40px">📱</span><span>بانتظار رمز QR...</span>';
-      }
+      qrPlaceholder.innerHTML = '<span style="font-size:40px">📱</span><span>بانتظار رمز QR...</span>';
     }
-
-    const hRes = await fetch(BASE_URL + '/api/health');
-    const h = await hRes.json();
-    if (hRes.ok && h.status === 'ok') {
-      document.getElementById('srvStatus').textContent = '🟢 يعمل';
-      document.getElementById('dbStatus').textContent = (h.dbConnected === true) ? '🟢 متصل' : ('🔴 ' + (h.database || ''));
-      document.getElementById('envValue').textContent = h.environment || h.service || '—';
+  } else {
+    qrImg.style.display = 'none';
+    connectedInfo.style.display = 'none';
+    qrPlaceholder.style.display = 'flex';
+    if (wa && wa.status === 'connecting') {
+      qrPlaceholder.innerHTML = '<span class="spinner-small"></span><span>جاري الاتصال بواتساب...</span>';
     } else {
-      document.getElementById('srvStatus').textContent = '🔴 متوقف';
-      if (h.message || h.error) addLog('warn', 'السيرفر: ' + (h.message || h.error));
+      qrPlaceholder.innerHTML = '<span style="font-size:40px">📱</span><span>بانتظار رمز QR...</span>';
     }
-    const upSec = Number(h.uptime) || 0;
-    const mins = Math.floor(upSec / 60);
-    const hrs = Math.floor(mins / 60);
-    document.getElementById('uptimeValue').textContent = hrs > 0 ? hrs + 'h ' + (mins % 60) + 'm' : (upSec ? mins + 'm' : '—');
+  }
 
-  } catch (err) {
-    document.getElementById('srvStatus').textContent = '🔴 خطأ اتصال';
+  // ─── معالجة حالة السيرفر (Health) ─────────────────
+  let h = null;
+  if (healthSettled.status === 'fulfilled' && healthSettled.value) {
+    try {
+      h = await healthSettled.value.json();
+    } catch (e) {
+      addLog('warn', 'تعذر قراءة رد السيرفر: ' + (e.message || ''));
+    }
+  } else if (healthSettled.status === 'rejected') {
+    addLog('error', 'السيرفر: ' + (healthSettled.reason && healthSettled.reason.message || 'خطأ اتصال'));
+  }
+
+  const hRes = healthSettled.status === 'fulfilled' ? healthSettled.value : null;
+  const ok = hRes && hRes.ok && h && h.status === 'ok';
+  if (ok) {
+    document.getElementById('srvStatus').textContent = '🟢 يعمل';
+    document.getElementById('dbStatus').textContent = (h.dbConnected === true) ? '🟢 متصل' : ('🔴 ' + (h.database || ''));
+    document.getElementById('envValue').textContent = h.environment || h.service || '—';
+  } else {
+    document.getElementById('srvStatus').textContent = (healthSettled.status === 'rejected' || !hRes) ? '🔴 خطأ اتصال' : '🔴 متوقف';
     document.getElementById('dbStatus').textContent = '—';
     document.getElementById('envValue').textContent = '—';
-    document.getElementById('uptimeValue').textContent = '—';
-    addLog('error', 'خطأ في تحديث الحالة: ' + err.message);
+    if (h && (h.message || h.error)) addLog('warn', 'السيرفر: ' + (h.message || h.error));
   }
+  const upSec = (h && typeof h.uptime === 'number') ? h.uptime : 0;
+  const mins = Math.floor(upSec / 60);
+  const hrs = Math.floor(mins / 60);
+  document.getElementById('uptimeValue').textContent = ok && upSec > 0 ? (hrs > 0 ? hrs + 'h ' + (mins % 60) + 'm' : mins + 'm') : '—';
 }
 
 async function restartWA() {
