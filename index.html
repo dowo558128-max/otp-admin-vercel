@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة التحكم — WhatsApp OTP</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #6c5ce7;
+      --success: #25D366;
+      --danger: #e17055;
+      --warning: #fdcb6e;
+      --bg: #0c0c1d;
+      --card: rgba(255,255,255,0.05);
+      --border: rgba(255,255,255,0.1);
+      --text: #ffffff;
+      --text-sec: rgba(255,255,255,0.7);
+      --text-muted: rgba(255,255,255,0.4);
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Tajawal', sans-serif;
+      direction: rtl;
+      background: linear-gradient(135deg, #0c0c1d, #1a1a3e, #16213e);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .header {
+      text-align: center;
+      padding: 30px 0;
+    }
+    .header h1 { font-size: 28px; margin-bottom: 8px; }
+    .header p { color: var(--text-sec); font-size: 14px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    @media(max-width:768px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 25px;
+      backdrop-filter: blur(20px);
+    }
+    .card h3 {
+      font-size: 16px;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .status-badge.ready { background: rgba(37,211,102,0.15); color: #25D366; border: 1px solid rgba(37,211,102,0.3); }
+    .status-badge.pending { background: rgba(253,203,110,0.15); color: #fdcb6e; border: 1px solid rgba(253,203,110,0.3); }
+    .status-badge.disconnected { background: rgba(225,112,85,0.15); color: #e17055; border: 1px solid rgba(225,112,85,0.3); }
+    .status-badge.connecting { background: rgba(108,92,231,0.15); color: #a29bfe; border: 1px solid rgba(108,92,231,0.3); }
+
+    .qr-container {
+      text-align: center;
+      padding: 20px;
+    }
+    .qr-container img {
+      max-width: 280px;
+      border-radius: 16px;
+      border: 2px solid var(--border);
+    }
+    .qr-placeholder {
+      width: 280px;
+      height: 280px;
+      margin: 0 auto;
+      border: 2px dashed var(--border);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 14px;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-row .label { color: var(--text-sec); }
+    .info-row .value { font-weight: 600; direction: ltr; }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Tajawal', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin-top: 10px;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg, #6c5ce7, #5a4bd1); color: white; }
+    .btn-danger { background: linear-gradient(135deg, #e17055, #d35141); color: white; }
+    .btn-success { background: linear-gradient(135deg, #25D366, #128C7E); color: white; }
+    .btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.1); }
+
+    .log-box {
+      background: rgba(0,0,0,0.3);
+      border-radius: 12px;
+      padding: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 12px;
+      font-family: monospace;
+      direction: ltr;
+      text-align: left;
+      color: var(--text-sec);
+      line-height: 1.8;
+    }
+    .log-box .log-entry { padding: 2px 0; }
+    .log-box .log-success { color: #25D366; }
+    .log-box .log-error { color: #e17055; }
+    .log-box .log-info { color: #a29bfe; }
+    .log-box .log-warn { color: #fdcb6e; }
+
+    .full-width { grid-column: 1 / -1; }
+
+    .spinner-small {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .connected-info {
+      text-align: center;
+      padding: 20px;
+    }
+    .connected-info .phone-number {
+      font-size: 24px;
+      font-weight: 700;
+      direction: ltr;
+      margin: 10px 0;
+      color: var(--success);
+    }
+    .connected-info .check-icon {
+      width: 60px; height: 60px;
+      background: rgba(37,211,102,0.15);
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 30px;
+      margin-bottom: 10px;
+    }
+
+    .admin-input {
+      width: 100%;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'Tajawal', sans-serif;
+      font-size: 14px;
+      outline: none;
+      direction: ltr;
+    }
+    .admin-input:focus { border-color: var(--primary); }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🔧 لوحة تحكم — نظام OTP</h1>
+  <p>إدارة اتصال واتساب ويب ومراقبة النظام (Vercel)</p>
+</div>
+
+<div class="grid">
+
+  <div class="card">
+    <h3>📡 حالة واتساب</h3>
+    <div id="statusSection">
+      <div id="statusBadge" class="status-badge disconnected">جاري التحقق...</div>
+      <div style="margin-top:15px;">
+        <div class="info-row">
+          <span class="label">الحالة</span>
+          <span class="value" id="waStatus">—</span>
+        </div>
+        <div class="info-row">
+          <span class="label">الرقم المتصل</span>
+          <span class="value" id="waPhone">—</span>
+        </div>
+        <div class="info-row">
+          <span class="label">رسائل مُرسلة</span>
+          <span class="value" id="waMsgCount">0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>📱 ربط واتساب</h3>
+    <div id="qrSection" class="qr-container">
+      <div class="qr-placeholder" id="qrPlaceholder">
+        <span style="font-size:40px">📱</span>
+        <span>جاري تحميل رمز QR...</span>
+      </div>
+      <img id="qrImage" style="display:none" alt="WhatsApp QR Code">
+      <div id="connectedInfo" class="connected-info" style="display:none">
+        <div class="check-icon">✓</div>
+        <p>واتساب متصل بنجاح!</p>
+        <div class="phone-number" id="connectedPhone"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>⚙️ التحكم</h3>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:13px; color:var(--text-sec); display:block; margin-bottom:5px;">مفتاح الأدمن</label>
+      <input type="password" id="adminKey" class="admin-input" placeholder="أدخل مفتاح الأدمن" value="otp-admin-2024">
+    </div>
+    <button class="btn btn-primary" onclick="restartWA()">🔄 إعادة تشغيل واتساب</button>
+    <button class="btn btn-danger" onclick="logoutWA()">🚪 تسجيل الخروج</button>
+    <button class="btn btn-success" onclick="testSend()">📤 إرسال رسالة تجريبية</button>
+  </div>
+
+  <div class="card">
+    <h3>🖥️ معلومات النظام</h3>
+    <div class="info-row">
+      <span class="label">حالة السيرفر</span>
+      <span class="value" id="srvStatus">—</span>
+    </div>
+    <div class="info-row">
+      <span class="label">قاعدة البيانات</span>
+      <span class="value" id="dbStatus">—</span>
+    </div>
+    <div class="info-row">
+      <span class="label">البيئة</span>
+      <span class="value" id="envValue">—</span>
+    </div>
+    <div class="info-row">
+      <span class="label">وقت التشغيل</span>
+      <span class="value" id="uptimeValue">—</span>
+    </div>
+  </div>
+
+  <div class="card full-width">
+    <h3>📋 سجل العمليات</h3>
+    <div class="log-box" id="logBox">
+      <div class="log-entry log-info">[System] جاري تحميل الحالة...</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="config.js"></script>
+<script>
+// استخدام عنوان API من config.js (للموقع على Vercel) أو من المسار الحالي
+const BASE_URL = (() => {
+  if (typeof window.OTP_API_BASE === 'string' && window.OTP_API_BASE) return window.OTP_API_BASE.replace(/\/$/, '');
+  const path = window.location.pathname;
+  const idx = path.indexOf('/admin');
+  if (idx > 0) return path.substring(0, idx);
+  return '';
+})();
+
+const ADMIN_KEY_INPUT = document.getElementById('adminKey');
+let pollInterval = null;
+
+async function refreshStatus() {
+  try {
+    const waRes = await fetch(BASE_URL + '/api/whatsapp/status');
+    const waJson = await waRes.json();
+    const wa = waJson.data || waJson;
+
+    const badge = document.getElementById('statusBadge');
+    const statusMap = {
+      ready: { text: '🟢 متصل', cls: 'ready' },
+      qr_pending: { text: '🟡 بانتظار المسح', cls: 'pending' },
+      connecting: { text: '🔵 جاري الاتصال', cls: 'connecting' },
+      disconnected: { text: '🔴 غير متصل', cls: 'disconnected' },
+      failed: { text: '❌ فشل', cls: 'disconnected' }
+    };
+    const s = statusMap[wa.status] || statusMap.disconnected;
+    badge.textContent = s.text;
+    badge.className = 'status-badge ' + s.cls;
+
+    document.getElementById('waStatus').textContent = wa.status || '—';
+    document.getElementById('waPhone').textContent = wa.connectedPhone || '—';
+    document.getElementById('waMsgCount').textContent = wa.messagesSent || 0;
+
+    const qrImg = document.getElementById('qrImage');
+    const qrPlaceholder = document.getElementById('qrPlaceholder');
+    const connectedInfo = document.getElementById('connectedInfo');
+
+    if (wa.status === 'ready') {
+      qrImg.style.display = 'none';
+      qrPlaceholder.style.display = 'none';
+      connectedInfo.style.display = 'block';
+      document.getElementById('connectedPhone').textContent = '+' + (wa.connectedPhone || '');
+    } else if (wa.status === 'qr_pending') {
+      let qrUrl = wa.qrDataUrl || null;
+      if (!qrUrl) {
+        try {
+          const qrRes = await fetch(BASE_URL + '/api/whatsapp/qr');
+          const qrData = await qrRes.json();
+          if (qrData.success && qrData.qr) qrUrl = qrData.qr;
+        } catch (e) {}
+      }
+      if (qrUrl) {
+        qrImg.src = qrUrl;
+        qrImg.style.display = 'block';
+        qrPlaceholder.style.display = 'none';
+        connectedInfo.style.display = 'none';
+      } else {
+        qrImg.style.display = 'none';
+        connectedInfo.style.display = 'none';
+        qrPlaceholder.style.display = 'flex';
+        qrPlaceholder.innerHTML = '<span style="font-size:40px">📱</span><span>بانتظار رمز QR...</span>';
+      }
+    } else {
+      qrImg.style.display = 'none';
+      connectedInfo.style.display = 'none';
+      qrPlaceholder.style.display = 'flex';
+      if (wa.status === 'connecting') {
+        qrPlaceholder.innerHTML = '<span class="spinner-small"></span><span>جاري الاتصال بواتساب...</span>';
+      } else {
+        qrPlaceholder.innerHTML = '<span style="font-size:40px">📱</span><span>بانتظار رمز QR...</span>';
+      }
+    }
+
+    const hRes = await fetch(BASE_URL + '/api/health');
+    const h = await hRes.json();
+    if (h.status === 'ok') {
+      document.getElementById('srvStatus').textContent = '🟢 يعمل';
+      document.getElementById('dbStatus').textContent = h.database === 'connected' ? '🟢 متصل' : '🔴 ' + (h.database || '');
+      document.getElementById('envValue').textContent = h.environment || '—';
+    } else {
+      document.getElementById('srvStatus').textContent = '🔴 متوقف';
+    }
+    const upSec = Number(h.uptime) || 0;
+    const mins = Math.floor(upSec / 60);
+    const hrs = Math.floor(mins / 60);
+    document.getElementById('uptimeValue').textContent = hrs > 0 ? hrs + 'h ' + (mins % 60) + 'm' : mins + 'm';
+
+  } catch (err) {
+    addLog('error', 'خطأ في تحديث الحالة: ' + err.message);
+  }
+}
+
+async function restartWA() {
+  const key = ADMIN_KEY_INPUT.value;
+  addLog('info', 'جاري إعادة تشغيل واتساب...');
+  try {
+    const res = await fetch(BASE_URL + '/api/whatsapp/restart', {
+      method: 'POST',
+      headers: { 'X-Admin-Key': key }
+    });
+    const data = await res.json();
+    addLog(data.success ? 'success' : 'error', data.message || data.error || '');
+    setTimeout(refreshStatus, 3000);
+  } catch (err) {
+    addLog('error', 'خطأ: ' + err.message);
+  }
+}
+
+async function logoutWA() {
+  if (!confirm('هل تريد تسجيل خروج واتساب؟')) return;
+  const key = ADMIN_KEY_INPUT.value;
+  addLog('warn', 'جاري تسجيل الخروج...');
+  try {
+    const res = await fetch(BASE_URL + '/api/whatsapp/logout', {
+      method: 'POST',
+      headers: { 'X-Admin-Key': key }
+    });
+    const data = await res.json();
+    addLog(data.success ? 'success' : 'error', data.success ? 'تم تسجيل الخروج' : (data.error || ''));
+    setTimeout(refreshStatus, 2000);
+  } catch (err) {
+    addLog('error', 'خطأ: ' + err.message);
+  }
+}
+
+async function testSend() {
+  const phone = prompt('أدخل رقم للاختبار (05xxxxxxxx):');
+  if (!phone) return;
+  addLog('info', 'جاري إرسال OTP تجريبي إلى ' + phone + '...');
+  try {
+    const res = await fetch(BASE_URL + '/api/otp/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    });
+    const data = await res.json();
+    if (data.success) {
+      addLog('success', 'تم الإرسال! ' + (data.devCode ? 'الرمز: ' + data.devCode : ''));
+    } else {
+      addLog('error', data.error || '');
+    }
+  } catch (err) {
+    addLog('error', 'خطأ: ' + err.message);
+  }
+}
+
+function addLog(type, message) {
+  const box = document.getElementById('logBox');
+  const time = new Date().toLocaleTimeString('ar-SA');
+  box.innerHTML += '<div class="log-entry log-' + type + '">[' + time + '] ' + message + '</div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+refreshStatus();
+pollInterval = setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>
